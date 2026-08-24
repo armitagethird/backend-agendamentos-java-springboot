@@ -8,8 +8,9 @@ de conflito de horário por usuário.
 ## Stack
 
 - **Java 17** · **Spring Boot 4.1**
-- **Spring Data JPA** (Hibernate) · **PostgreSQL**
+- **Spring Data JPA** (Hibernate) · **PostgreSQL 18**
 - **Flyway** para versionamento do schema
+- **Docker Compose** para o banco de desenvolvimento
 - **Bean Validation** para validação de entrada
 - **Lombok** · **Maven**
 
@@ -48,20 +49,75 @@ controller  →  service  →  repository  →  PostgreSQL
 
 ## Como rodar
 
-**Pré-requisitos:** JDK 17+ e PostgreSQL rodando na porta 5432.
+**Pré-requisitos:** JDK 17+ (desenvolvido com JDK 21 LTS) e Docker.
+
+### 1. Suba o banco
+
+O `compose.yaml` sobe um PostgreSQL 18 em container, publicado na porta **5433** do
+host — escolhida para não conflitar com uma instalação local do PostgreSQL na 5432.
 
 ```bash
-# 1. crie o banco
-createdb agendamentos
+docker compose up -d
+docker compose ps          # confirme STATUS "Up"
+```
 
-# 2. crie o arquivo .env na raiz do projeto
-DB_USER=seu_usuario
-DB_PASSWORD=sua_senha
+### 2. Crie o arquivo `.env` na raiz do projeto
 
-# 3. suba a aplicação (Flyway aplica as migrations no start)
+```env
+DB_USER=agendamentos
+DB_PASSWORD=agendamentos
+```
+
+Os valores precisam ser iguais a `POSTGRES_USER` e `POSTGRES_PASSWORD` do `compose.yaml`.
+
+### 3. Suba a aplicação
+
+```bash
 ./mvnw spring-boot:run
 ```
 
-A API sobe em `http://localhost:8080`.
+O Flyway aplica as migrations pendentes no start. A API sobe em `http://localhost:8080`.
 
 > As credenciais vêm de variáveis de ambiente — nada de senha no repositório.
+> O `.env` está no `.gitignore`; use o `.env.example` como modelo.
+
+## Banco de dados
+
+### Comandos do container
+
+| Comando | O que faz |
+|---|---|
+| `docker compose up -d` | sobe o banco em segundo plano |
+| `docker compose stop` | para o container sem destruí-lo |
+| `docker compose logs db` | mostra a saída do PostgreSQL |
+| `docker compose down` | remove o container — **os dados sobrevivem** no volume |
+| `docker compose down -v` | remove o container **e apaga o volume** |
+
+Para abrir um `psql` dentro do container:
+
+```bash
+docker exec -it agendamentos-db psql -U agendamentos -d agendamentos
+```
+
+### Migrations
+
+O schema é versionado pelo Flyway em `src/main/resources/db/migration`, no formato
+`V{versão}__{descrição}.sql`. As migrations pendentes são aplicadas automaticamente
+quando a aplicação sobe.
+
+⚠️ **Migration já aplicada não se edita.** Alterar um arquivo existente quebra o
+checksum e o próximo start falha com `ValidateException` — e, em produção, a mudança
+nunca chegaria ao banco. Para corrigir ou evoluir o schema, crie a próxima versão.
+
+Para recomeçar com o banco limpo em desenvolvimento:
+
+```bash
+docker compose down -v && docker compose up -d
+```
+
+## Alternativa sem Docker
+
+É possível usar uma instalação local do PostgreSQL. Nesse caso, crie o banco
+(`createdb agendamentos`), ajuste `spring.datasource.url` em
+`src/main/resources/application.properties` para a porta correta e use as
+credenciais dessa instância no `.env`.
